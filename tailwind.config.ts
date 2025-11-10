@@ -47,6 +47,11 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        tactical: {
+          tan: "hsl(var(--tactical-tan))",
+          olive: "hsl(var(--tactical-olive))",
+          dark: "hsl(var(--tactical-dark))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",

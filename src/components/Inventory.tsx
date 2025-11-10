@@ -1,6 +1,13 @@
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { contactFormSchema, type ContactFormData } from "@/lib/validations";
 import product1 from "@/assets/product-1.jpg";
 import product2 from "@/assets/product-2.jpg";
 import product3 from "@/assets/product-3.jpg";
@@ -42,6 +49,91 @@ const products = [
 ];
 
 const Inventory = () => {
+  const { toast } = useToast();
+  const [selectedProduct, setSelectedProduct] = useState<typeof products[0] | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState<ContactFormData>({
+    name: "",
+    email: "",
+    phone: "",
+    message: "",
+  });
+  const [errors, setErrors] = useState<Partial<Record<keyof ContactFormData, string>>>({});
+
+  const handleInquirySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrors({});
+    setIsSubmitting(true);
+
+    try {
+      // Validate form data
+      const validatedData = contactFormSchema.parse(formData);
+
+      // Call edge function
+      const { error } = await supabase.functions.invoke("send-contact-email", {
+        body: {
+          ...validatedData,
+          type: "inquiry",
+          productName: selectedProduct?.name,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Inquiry sent!",
+        description: "We'll get back to you soon about this product.",
+      });
+
+      // Reset form and close dialog
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        message: "",
+      });
+      setSelectedProduct(null);
+    } catch (error: any) {
+      if (error.errors) {
+        // Zod validation errors
+        const fieldErrors: Partial<Record<keyof ContactFormData, string>> = {};
+        error.errors.forEach((err: any) => {
+          if (err.path[0]) {
+            fieldErrors[err.path[0] as keyof ContactFormData] = err.message;
+          }
+        });
+        setErrors(fieldErrors);
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to send inquiry. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleChange = (field: keyof ContactFormData, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    // Clear error when user starts typing
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: undefined }));
+    }
+  };
+
+  const openInquiryDialog = (product: typeof products[0]) => {
+    setSelectedProduct(product);
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      message: `I'm interested in learning more about the ${product.name}.`,
+    });
+    setErrors({});
+  };
+
   return (
     <section id="inventory" className="py-24 bg-muted/30">
       <div className="container mx-auto px-4">
@@ -81,7 +173,10 @@ const Inventory = () => {
                 <CardDescription className="text-sm">
                   {product.description}
                 </CardDescription>
-                <Button className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                <Button 
+                  className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+                  onClick={() => openInquiryDialog(product)}
+                >
                   Inquire Now
                 </Button>
               </CardContent>
@@ -98,6 +193,94 @@ const Inventory = () => {
           </Button>
         </div>
       </div>
+
+      <Dialog open={!!selectedProduct} onOpenChange={(open) => !open && setSelectedProduct(null)}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Product Inquiry</DialogTitle>
+            <DialogDescription>
+              Interested in {selectedProduct?.name}? Fill out the form below and we'll get back to you.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={handleInquirySubmit}>
+            <div>
+              <label htmlFor="inquiry-name" className="text-sm font-medium mb-2 block">
+                Name <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="inquiry-name"
+                placeholder="Your name"
+                value={formData.name}
+                onChange={(e) => handleChange("name", e.target.value)}
+                className={errors.name ? "border-destructive" : ""}
+              />
+              {errors.name && (
+                <p className="text-sm text-destructive mt-1">{errors.name}</p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="inquiry-email" className="text-sm font-medium mb-2 block">
+                Email <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="inquiry-email"
+                type="email"
+                placeholder="your@email.com"
+                value={formData.email}
+                onChange={(e) => handleChange("email", e.target.value)}
+                className={errors.email ? "border-destructive" : ""}
+              />
+              {errors.email && (
+                <p className="text-sm text-destructive mt-1">{errors.email}</p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="inquiry-phone" className="text-sm font-medium mb-2 block">
+                Phone
+              </label>
+              <Input
+                id="inquiry-phone"
+                type="tel"
+                placeholder="(713) 553-7419"
+                value={formData.phone}
+                onChange={(e) => handleChange("phone", e.target.value)}
+                className={errors.phone ? "border-destructive" : ""}
+              />
+              {errors.phone && (
+                <p className="text-sm text-destructive mt-1">{errors.phone}</p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="inquiry-message" className="text-sm font-medium mb-2 block">
+                Message <span className="text-destructive">*</span>
+              </label>
+              <Textarea
+                id="inquiry-message"
+                placeholder="Tell us about your interest..."
+                className={`min-h-[100px] ${errors.message ? "border-destructive" : ""}`}
+                value={formData.message}
+                onChange={(e) => handleChange("message", e.target.value)}
+              />
+              {errors.message && (
+                <p className="text-sm text-destructive mt-1">{errors.message}</p>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setSelectedProduct(null)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="flex-1" disabled={isSubmitting}>
+                {isSubmitting ? "Sending..." : "Send Inquiry"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 };
